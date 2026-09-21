@@ -1,0 +1,515 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id                 String   @id @default(uuid())
+  name               String   @default("MEMOIRE")
+  tagline            String   @default("CRAFTING BRANDS")
+  officeLatitude     Float    @default(19.0760)
+  officeLongitude    Float    @default(72.9982)
+  officeRadiusMeters Int      @default(150)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  users       User[]
+  clients     Client[]
+  employees   Employee[]
+  projects    Project[]
+  auditLogs   AuditLog[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  avatar       String?
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id])
+  status       String   @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED
+  lastLoginAt  DateTime?
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  employee          Employee?
+  messages          Message[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  aiConversations   AIConversation[]
+  convoMembers      ConversationMember[]
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // FOUNDER, MASTER_ADMIN, HR, BDM, ACCOUNT_MANAGER, PROJECT_MANAGER, EMPLOYEE, FINANCE, TEAM_LEAD, CLIENT
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users           User[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  module      String   // clients, leads, projects, tasks, employees, hr, attendance, reports, finance, settings, ai
+  action      String   // view, create, edit, delete, approve, punch_in, punch_out, execute
+  description String?
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@unique([module, action])
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  employees Employee[]
+}
+
+model Designation {
+  id        String   @id @default(uuid())
+  title     String   @unique
+  createdAt DateTime @default(now())
+
+  employees Employee[]
+}
+
+model Employee {
+  id                String       @id @default(uuid())
+  employeeId        String       @unique // e.g. MEM-101
+  userId            String       @unique
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId      String
+  department        Department   @relation(fields: [departmentId], references: [id])
+  designationId     String
+  designation       Designation  @relation(fields: [designationId], references: [id])
+  reportingManagerId String?
+  joiningDate       DateTime
+  employmentStatus  String       @default("Full-Time")
+  workLocation      String       @default("Navi Mumbai Office")
+  skills            String[]
+  monthlyRating     Float        @default(4.8)
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  attendances       Attendance[]
+  leaveRequests     LeaveRequest[]
+  leaveBalances     LeaveBalance[]
+  workReports       WorkReport[]
+  assignedTasks     Task[]       @relation("TaskAssignedTo")
+  createdTasks      Task[]       @relation("TaskAssignedBy")
+  reimbursements    Reimbursement[]
+}
+
+model Client {
+  id             String       @id @default(uuid())
+  companyName    String
+  logo           String?
+  industry       String
+  website        String?
+  location       String
+  status         String       @default("Active") // Active, VIP, Prospect, Inactive
+  annualValue    Float        @default(0)
+  healthScore    Int          @default(90)
+  joinedDate     DateTime     @default(now())
+  notes          String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  contacts       ClientContact[]
+  projects       Project[]
+  tasks          Task[]
+  invoices       Invoice[]
+  supportTickets SupportTicket[]
+}
+
+model ClientContact {
+  id          String   @id @default(uuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name        String
+  designation String
+  email       String
+  phone       String
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model AgencyService {
+  id                  String   @id @default(uuid())
+  name                String   @unique
+  category            String   // BRAND & CREATIVE, DIGITAL MARKETING, WEBSITE & TECHNOLOGY, ADVERTISING, CONTENT & PRODUCTION, PACKAGING & SPACE
+  description         String
+  pricingType         String   @default("Retainer")
+  basePrice           Float
+  activeProjectsCount Int      @default(0)
+  activeClientsCount  Int      @default(0)
+  createdAt           DateTime @default(now())
+}
+
+model Lead {
+  id                 String   @id @default(uuid())
+  companyName        String
+  contactName        String
+  email              String
+  phone              String
+  whatsapp           String?
+  industry           String
+  location           String
+  source             String
+  interestedServices String[]
+  budget             Float
+  expectedClosing    DateTime?
+  assignedBDM        String
+  leadScore          Int      @default(75)
+  status             String   @default("New") // New, Contacted, Qualified, Meeting Scheduled, Proposal Sent, Negotiation, Won, Lost
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  activities         LeadActivity[]
+}
+
+model LeadActivity {
+  id        String   @id @default(uuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  actor     String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model Project {
+  id              String       @id @default(uuid())
+  name            String
+  clientId        String
+  client          Client       @relation(fields: [clientId], references: [id])
+  serviceCategory String
+  projectManager  String
+  startDate       DateTime
+  endDate         DateTime
+  budget          Float
+  priority        String       @default("High") // Low, Medium, High, Urgent
+  status          String       @default("In Progress") // Planning, In Progress, Review, Client Approval, Completed
+  progress        Int          @default(0)
+  description     String?
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  tasks           Task[]
+  members         ProjectMember[]
+  invoices        Invoice[]
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  role      String   @default("Contributor")
+  createdAt DateTime @default(now())
+}
+
+model Task {
+  id             String      @id @default(uuid())
+  title          String
+  description    String?
+  projectId      String
+  project        Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clientId       String
+  client         Client      @relation(fields: [clientId], references: [id])
+  assignedToId   String
+  assignedTo     Employee    @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  assignedById   String
+  assignedBy     Employee    @relation("TaskAssignedBy", fields: [assignedById], references: [id])
+  priority       String      @default("Medium") // Low, Medium, High, Urgent
+  status         String      @default("To Do") // To Do, In Progress, Review, Completed, Blocked
+  startDate      DateTime
+  dueDate        DateTime
+  estimatedHours Float       @default(4)
+  actualHours    Float       @default(0)
+  tags           String[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  checklist      TaskChecklist[]
+  comments       TaskComment[]
+  timeEntries    TaskTimeEntry[]
+}
+
+model TaskChecklist {
+  id        String   @id @default(uuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  text      String
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    String
+  text      String
+  createdAt DateTime @default(now())
+}
+
+model TaskTimeEntry {
+  id        String    @id @default(uuid())
+  taskId    String
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  startedAt DateTime
+  endedAt   DateTime?
+  duration  Float     @default(0) // in minutes
+  createdAt DateTime  @default(now())
+}
+
+model Attendance {
+  id                 String    @id @default(uuid())
+  employeeId         String
+  employee           Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date               DateTime
+  serverPunchInTime  DateTime  @default(now())
+  serverPunchOutTime DateTime?
+  punchInTimeDisplay String
+  punchOutTimeDisplay String?
+  workingHours       String    @default("00h 00m")
+  breakDuration      String    @default("0m")
+  latitude           Float
+  longitude          Float
+  gpsAccuracyMeters  Float
+  isWithinGeofence   Boolean   @default(true)
+  locationName       String    @default("Navi Mumbai Office")
+  status             String    @default("Present") // Present, Late, Half Day, Absent, Leave
+  punchOutSummary    String?   // Mandatory end-of-day work summary
+  blockers           String?
+  tomorrowPriority   String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model LeaveType {
+  id          String   @id @default(uuid())
+  name        String   @unique // Casual Leave, Sick Leave, Earned Leave, Half Day, Work From Home
+  defaultDays Int
+  createdAt   DateTime @default(now())
+}
+
+model LeaveBalance {
+  id         String   @id @default(uuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  casual     Int      @default(12)
+  sick       Int      @default(10)
+  earned     Int      @default(15)
+  year       Int      @default(2026)
+  updatedAt  DateTime @updatedAt
+}
+
+model LeaveRequest {
+  id          String   @id @default(uuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType   String
+  startDate   DateTime
+  endDate     DateTime
+  reason      String
+  status      String   @default("Pending") // Pending, Approved, Rejected
+  reviewedBy  String?
+  appliedOn   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model WorkReport {
+  id             String   @id @default(uuid())
+  employeeId     String
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type           String   // Daily, Weekly
+  date           DateTime
+  tasksCompleted String[]
+  hoursWorked    Float
+  achievements   String
+  challenges     String?
+  nextPlan       String?
+  status         String   @default("Submitted") // Submitted, Approved, Changes Requested
+  feedback       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Conversation {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   @default("channel") // channel, direct, project
+  description String?
+  createdAt   DateTime @default(now())
+
+  members  ConversationMember[]
+  messages Message[]
+}
+
+model ConversationMember {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt       DateTime     @default(now())
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id])
+  text           String
+  isPinned       Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  description String
+  category  String   // Tasks, HR, CRM, Messages, System
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Document {
+  id           String   @id @default(uuid())
+  name         String
+  category     String   // Brand Assets, Contracts, Project Documents, Proposals
+  size         String
+  uploadedBy   String
+  fileType     String   // pdf, doc, png, figma, zip
+  storageKey   String
+  tags         String[]
+  uploadedDate DateTime @default(now())
+}
+
+model Invoice {
+  id            String   @id @default(uuid())
+  invoiceNumber String   @unique // MEM-INV-2026-081
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id])
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id])
+  amount        Float
+  issueDate     DateTime
+  dueDate       DateTime
+  status        String   @default("Pending") // Paid, Pending, Overdue, Cancelled
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Reimbursement {
+  id          String   @id @default(uuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  expenseType String
+  amount      Float
+  date        DateTime
+  description String
+  project     String
+  status      String   @default("Submitted") // Submitted, Under Review, Approved, Rejected, Paid
+  createdAt   DateTime @default(now())
+}
+
+model SupportTicket {
+  id           String   @id @default(uuid())
+  ticketNumber String   @unique // MEM-TKT-104
+  clientId     String?
+  client       Client?  @relation(fields: [clientId], references: [id])
+  submittedBy  String
+  category     String   // IT Request, HR Request, Campaign Issue, Website Issue
+  priority     String   @default("Medium")
+  subject      String
+  description  String
+  status       String   @default("Open") // Open, In Progress, Waiting, Resolved, Closed
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AuditLog {
+  id             String       @id @default(uuid())
+  actorId        String
+  actor          User         @relation(fields: [actorId], references: [id])
+  action         String
+  entity         String
+  entityId       String?
+  ipAddress      String?
+  userAgent      String?
+  metadata       String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  timestamp      DateTime     @default(now())
+}
+
+model AIConversation {
+  id        String      @id @default(uuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String      @default("Memoire AI Sync")
+  createdAt DateTime    @default(now())
+
+  messages  AIMessage[]
+}
+
+model AIMessage {
+  id             String         @id @default(uuid())
+  conversationId String
+  conversation   AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String         // user, assistant, system, tool
+  content        String
+  toolCalls      String?
+  createdAt      DateTime       @default(now())
+
+  toolExecutions AIToolExecution[]
+}
+
+model AIToolExecution {
+  id            String    @id @default(uuid())
+  messageId     String
+  message       AIMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  toolName      String
+  arguments     String
+  resultSummary String
+  isConfirmed   Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+}
