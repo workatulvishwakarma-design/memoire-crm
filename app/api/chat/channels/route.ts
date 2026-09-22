@@ -1,27 +1,28 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { INITIAL_CHANNELS } from "@/data/mockData";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
 
 export async function GET() {
-  try {
-    const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase.from("chat_channels").select("*");
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, data: [], dbConnected: false });
 
-    if (error || !data || data.length === 0) {
-      return NextResponse.json({ success: true, data: INITIAL_CHANNELS });
-    }
+  const { data, error } = await supabase
+    .from("chat_channels")
+    .select("*")
+    .order("created_at", { ascending: true });
 
-    const mapped = data.map((c: any) => ({
-      id: c.id,
-      name: c.name,
-      type: c.type,
-      description: c.description,
-      unreadCount: c.unread_count || 0,
-      members: c.members || [],
-    }));
-
-    return NextResponse.json({ success: true, data: mapped });
-  } catch (err: any) {
-    return NextResponse.json({ success: true, data: INITIAL_CHANNELS });
+  if (error) {
+    console.error("[API/chat/channels GET]", error.message);
+    return NextResponse.json({ success: false, error: error.message, data: [], dbConnected: true }, { status: 500 });
   }
+
+  const mapped = (data || []).map((c: any) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description || "",
+    isPrivate: c.is_private || false,
+    memberCount: c.member_count || 1,
+    unread: c.unread || 0,
+  }));
+
+  return NextResponse.json({ success: true, data: mapped, dbConnected: true });
 }

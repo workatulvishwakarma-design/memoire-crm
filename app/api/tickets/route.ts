@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { INITIAL_TICKETS } from "@/data/mockData";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
+
 
 export async function GET() {
   try {
-    const supabase = await createServerSupabaseClient();
+    const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, data: [], dbConnected: false });
     const { data, error } = await supabase.from("support_tickets").select("*").order("created_at", { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      return NextResponse.json({ success: true, data: INITIAL_TICKETS });
-    }
+    
 
-    const mapped = data.map((t: any) => ({
+    const mapped = (data || []).map((t: any) => ({
       id: t.id,
       ticketNumber: t.ticket_number,
       submittedBy: t.submitted_by,
@@ -24,16 +23,15 @@ export async function GET() {
     }));
 
     return NextResponse.json({ success: true, data: mapped });
-  } catch (err: any) {
-    return NextResponse.json({ success: true, data: INITIAL_TICKETS });
-  }
+  } catch (err: any) { console.error("[API] Unhandled:", err.message); return NextResponse.json({ success: false, error: err.message }, { status: 500 }); }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const supabase = await createServerSupabaseClient();
+    const supabase = createServiceSupabaseClient();
 
+  if (!supabase) return NextResponse.json({ success: true, data: [], dbConnected: false });
     const tktNum = `MEM-TKT-${Math.floor(Math.random() * 800) + 100}`;
     const newRecord = {
       id: `tkt-${Date.now()}`,

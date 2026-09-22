@@ -1,29 +1,37 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const { itemId } = await request.json();
-    const supabase = await createServerSupabaseClient();
+// PATCH /api/tasks/[id]/checklist — toggle checklist item
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const { itemId } = await request.json();
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, dbConnected: false });
 
-    // Fetch existing task checklist
-    let checklist: any[] = [];
-    try {
-      const { data } = await supabase.from("tasks").select("checklist").eq("id", id).single();
-      if (data && Array.isArray(data.checklist)) {
-        checklist = data.checklist.map((item: any) =>
-          item.id === itemId ? { ...item, completed: !item.completed } : item
-        );
-        await supabase.from("tasks").update({ checklist }).eq("id", id);
-      }
-    } catch {}
+  // Fetch current checklist
+  const { data: task, error: fetchError } = await supabase
+    .from("tasks")
+    .select("checklist")
+    .eq("id", id)
+    .single();
 
-    return NextResponse.json({ success: true, itemId, checklist });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  if (fetchError || !task) {
+    return NextResponse.json({ success: false, error: fetchError?.message || "Task not found", dbConnected: true }, { status: 404 });
   }
+
+  const checklist = (task.checklist || []).map((item: any) =>
+    item.id === itemId ? { ...item, completed: !item.completed } : item
+  );
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({ checklist, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) {
+    console.error("[API/tasks/checklist PATCH]", id, error.message);
+    return NextResponse.json({ success: false, error: error.message, dbConnected: true }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true, data: { checklist }, dbConnected: true });
 }

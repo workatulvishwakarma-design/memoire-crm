@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { INITIAL_REIMBURSEMENTS } from "@/data/mockData";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
+
 
 export async function GET() {
   try {
-    const supabase = await createServerSupabaseClient();
+    const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, data: [], dbConnected: false });
     const { data, error } = await supabase.from("reimbursements").select("*").order("created_at", { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      return NextResponse.json({ success: true, data: INITIAL_REIMBURSEMENTS });
-    }
+    
 
-    const mapped = data.map((r: any) => ({
+    const mapped = (data || []).map((r: any) => ({
       id: r.id,
       employeeName: r.employee_name,
       expenseType: r.expense_type,
@@ -23,16 +22,15 @@ export async function GET() {
     }));
 
     return NextResponse.json({ success: true, data: mapped });
-  } catch (err: any) {
-    return NextResponse.json({ success: true, data: INITIAL_REIMBURSEMENTS });
-  }
+  } catch (err: any) { console.error("[API] Unhandled:", err.message); return NextResponse.json({ success: false, error: err.message }, { status: 500 }); }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const supabase = await createServerSupabaseClient();
+    const supabase = createServiceSupabaseClient();
 
+  if (!supabase) return NextResponse.json({ success: true, data: [], dbConnected: false });
     const newRecord = {
       id: `reimb-${Date.now()}`,
       employee_name: body.employeeName || "Rahul Sharma",

@@ -1,46 +1,36 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const body = await request.json();
-    const supabase = await createServerSupabaseClient();
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const body = await request.json();
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, dbConnected: false });
 
-    const updatePayload: Record<string, any> = {};
-    if (body.name !== undefined) updatePayload.name = body.name;
-    if (body.category !== undefined) updatePayload.category = body.category;
-    if (body.description !== undefined) updatePayload.description = body.description;
-    if (body.pricingType !== undefined) updatePayload.pricing_type = body.pricingType;
-    if (body.basePrice !== undefined) updatePayload.base_price = body.basePrice;
+  const upd: Record<string, any> = { updated_at: new Date().toISOString() };
+  if (body.name !== undefined) upd.name = body.name;
+  if (body.description !== undefined) upd.description = body.description;
+  if (body.category !== undefined) upd.category = body.category;
+  if (body.price !== undefined) upd.price = Number(body.price);
+  if (body.status !== undefined) upd.status = body.status;
 
-    try {
-      await supabase.from("services").update(updatePayload).eq("id", id);
-    } catch {}
-
-    return NextResponse.json({ success: true, data: { id, ...body } });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  const { error } = await supabase.from("agency_services").update(upd).eq("id", id);
+  if (error) {
+    console.error("[API/services PATCH]", id, error.message);
+    return NextResponse.json({ success: false, error: error.message, dbConnected: true }, { status: 500 });
   }
+  return NextResponse.json({ success: true, dbConnected: true });
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const supabase = await createServerSupabaseClient();
+export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, dbConnected: false });
 
-    try {
-      await supabase.from("services").delete().eq("id", id);
-    } catch {}
-
-    return NextResponse.json({ success: true, message: `Service ${id} deleted` });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  const { error } = await supabase.from("agency_services").delete().eq("id", id);
+  if (error) {
+    console.error("[API/services DELETE]", id, error.message);
+    return NextResponse.json({ success: false, error: error.message, dbConnected: true }, { status: 500 });
   }
+  return NextResponse.json({ success: true, dbConnected: true });
 }

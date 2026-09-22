@@ -1,101 +1,168 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const supabase = await createServerSupabaseClient();
-    const body = await request.json().catch(() => ({}));
+// POST /api/leads/[id]/win — Convert lead to client + create initial project
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const lead = await request.json();
+  const supabase = createServiceSupabaseClient();
+  const today = new Date().toISOString().split("T")[0];
 
-    // Update lead
-    try {
-      await supabase.from("leads").update({ status: "Won" }).eq("id", id);
-    } catch {}
+  // Build client record
+  const clientRecord = {
+    company_name: lead.companyName,
+    logo: "",
+    industry: lead.industry,
+    website: `https://${lead.companyName.toLowerCase().replace(/[^a-z0-9]/g, "")}.in`,
+    location: lead.location,
+    status: "Active",
+    annual_value: Number(lead.budget || 0),
+    health_score: 90,
+    bdm: lead.assignedBDM || "Amit Patel",
+    account_manager: "Account Manager",
+    services: lead.interestedServices || [],
+    joined_date: today,
+    notes: lead.notes || "",
+  };
 
-    const clientId = `client-${Date.now()}`;
-    const projectId = `proj-${Date.now()}`;
-
-    const newClient = {
-      id: clientId,
-      companyName: body.companyName || "Won Client Ltd",
-      logo: "https://images.unsplash.com/photo-1572021335469-31706a17aaef?w=120&auto=format&fit=crop&q=80",
-      industry: body.industry || "Enterprise",
-      website: body.website || "https://company.in",
-      location: body.location || "Mumbai",
-      status: "Active",
-      annualValue: Number(body.budget || 1200000),
-      healthScore: 95,
-      bdm: body.assignedBDM || "Amit Patel",
-      accountManager: "Rohan Mehta",
-      services: body.interestedServices || ["Brand & Digital Marketing"],
-      joinedDate: new Date().toISOString().split("T")[0],
-      notes: "Auto-onboarded deal from BDM pipeline.",
-    };
-
-    const newProject = {
-      id: projectId,
-      name: `${newClient.companyName} Brand Retainer`,
-      clientId: newClient.id,
-      clientName: newClient.companyName,
-      serviceCategory: "Brand & Digital Marketing",
-      projectManager: "Rohan Mehta",
-      team: ["Ananya Iyer", "Sneha Kulkarni"],
-      startDate: new Date().toISOString().split("T")[0],
-      endDate: "2026-12-31",
-      budget: newClient.annualValue,
-      priority: "High",
-      status: "Planning",
-      progress: 10,
-      description: `Client onboarding and launch deliverables for ${newClient.companyName}.`,
-    };
-
-    try {
-      await supabase.from("clients").insert({
-        id: newClient.id,
-        company_name: newClient.companyName,
-        logo: newClient.logo,
-        industry: newClient.industry,
-        website: newClient.website,
-        location: newClient.location,
-        status: newClient.status,
-        annual_value: newClient.annualValue,
-        health_score: newClient.healthScore,
-        bdm: newClient.bdm,
-        account_manager: newClient.accountManager,
-        services: newClient.services,
-        notes: newClient.notes,
-      });
-
-      await supabase.from("projects").insert({
-        id: newProject.id,
-        name: newProject.name,
-        client_id: newClient.id,
-        client_name: newClient.companyName,
-        service_category: newProject.serviceCategory,
-        project_manager: newProject.projectManager,
-        team: newProject.team,
-        start_date: newProject.startDate,
-        end_date: newProject.endDate,
-        budget: newProject.budget,
-        priority: newProject.priority,
-        status: newProject.status,
-        progress: newProject.progress,
-        description: newProject.description,
-      });
-    } catch {}
-
+  if (!supabase) {
+    // No DB — return optimistic data
+    const localClientId = `client-${Date.now()}`;
     return NextResponse.json({
       success: true,
+      dbConnected: false,
       data: {
-        leadId: id,
-        client: newClient,
-        project: newProject,
+        client: {
+          ...clientRecord,
+          id: localClientId,
+          joinedDate: today,
+          primaryContact: {
+            id: `cont-${Date.now()}`,
+            name: lead.contactName,
+            designation: "Key Contact",
+            email: lead.email,
+            phone: lead.phone,
+            isPrimary: true,
+          },
+        },
+        project: {
+          id: `proj-${Date.now()}`,
+          name: `${lead.companyName} Brand Retainer`,
+          clientId: localClientId,
+          clientName: lead.companyName,
+          serviceCategory: (lead.interestedServices || [])[0] || "Brand & Digital Marketing",
+          projectManager: "Project Lead",
+          team: [],
+          startDate: today,
+          endDate: new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
+          budget: lead.budget,
+          priority: "High",
+          status: "Planning",
+          progress: 10,
+          description: `Initial brand onboarding for ${lead.companyName}.`,
+        },
       },
     });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
+
+  // Insert client
+  const { data: clientData, error: clientError } = await supabase
+    .from("clients")
+    .insert(clientRecord)
+    .select()
+    .single();
+
+  if (clientError) {
+    console.error("[API/leads/win CLIENT INSERT]", clientError.message);
+    return NextResponse.json({ success: false, error: clientError.message, dbConnected: true }, { status: 500 });
+  }
+
+  // Insert contact
+  await supabase.from("client_contacts").insert({
+    client_id: clientData.id,
+    name: lead.contactName,
+    designation: "Key Contact",
+    email: lead.email,
+    phone: lead.phone,
+    is_primary: true,
+  });
+
+  // Insert project
+  const projectRecord = {
+    name: `${lead.companyName} Brand Retainer`,
+    client_id: clientData.id,
+    client_name: lead.companyName,
+    service_category: (lead.interestedServices || [])[0] || "Brand & Digital Marketing",
+    project_manager: "Project Lead",
+    team: [],
+    start_date: today,
+    end_date: new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
+    budget: Number(lead.budget || 0),
+    priority: "High",
+    status: "Planning",
+    progress: 10,
+    description: `Initial brand onboarding for ${lead.companyName}.`,
+  };
+
+  const { data: projData, error: projError } = await supabase
+    .from("projects")
+    .insert(projectRecord)
+    .select()
+    .single();
+
+  // Mark lead as won with converted_client_id
+  await supabase
+    .from("leads")
+    .update({ status: "Won", converted_client_id: clientData.id, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  const clientMapped = {
+    id: clientData.id,
+    companyName: clientData.company_name,
+    logo: clientData.logo || "",
+    industry: clientData.industry,
+    website: clientData.website,
+    location: clientData.location,
+    status: clientData.status,
+    annualValue: Number(clientData.annual_value || 0),
+    healthScore: clientData.health_score || 90,
+    bdm: clientData.bdm,
+    accountManager: clientData.account_manager,
+    services: clientData.services || [],
+    joinedDate: clientData.joined_date || today,
+    notes: clientData.notes || "",
+    primaryContact: {
+      id: `cont-${clientData.id}`,
+      name: lead.contactName,
+      designation: "Key Contact",
+      email: lead.email,
+      phone: lead.phone,
+      isPrimary: true,
+    },
+  };
+
+  const projectMapped = projData
+    ? {
+        id: projData.id,
+        name: projData.name,
+        clientId: projData.client_id,
+        clientName: projData.client_name,
+        serviceCategory: projData.service_category,
+        projectManager: projData.project_manager,
+        team: projData.team || [],
+        startDate: projData.start_date,
+        endDate: projData.end_date,
+        budget: Number(projData.budget || 0),
+        priority: projData.priority,
+        status: projData.status,
+        progress: projData.progress || 10,
+        description: projData.description || "",
+      }
+    : null;
+
+  return NextResponse.json({
+    success: true,
+    dbConnected: true,
+    data: { client: clientMapped, project: projectMapped },
+  });
 }

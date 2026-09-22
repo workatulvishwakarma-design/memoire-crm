@@ -1,77 +1,81 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { INITIAL_DOCUMENTS } from "@/data/mockData";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
 
 export async function GET() {
-  try {
-    const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase.from("documents").select("*").order("created_at", { ascending: false });
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, data: [], dbConnected: false });
 
-    if (error || !data || data.length === 0) {
-      return NextResponse.json({ success: true, data: INITIAL_DOCUMENTS });
-    }
+  const { data, error } = await supabase
+    .from("documents")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-    const mapped = data.map((d: any) => ({
-      id: d.id,
-      name: d.name,
-      category: d.category,
-      size: d.size,
-      uploadedBy: d.uploaded_by,
-      uploadedDate: d.uploaded_date,
-      tags: d.tags || [],
-      fileType: d.file_type || "pdf",
-      fileUrl: d.file_url,
-    }));
-
-    return NextResponse.json({ success: true, data: mapped });
-  } catch (err: any) {
-    return NextResponse.json({ success: true, data: INITIAL_DOCUMENTS });
+  if (error) {
+    console.error("[API/documents GET]", error.message);
+    return NextResponse.json({ success: false, error: error.message, data: [], dbConnected: true }, { status: 500 });
   }
+
+  const mapped = (data || []).map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    category: d.category || "General",
+    size: d.size || "",
+    uploadedBy: d.uploaded_by || "Admin",
+    uploadedDate: d.uploaded_date || d.created_at?.split("T")[0] || "",
+    tags: d.tags || [],
+    fileType: d.file_type || "pdf",
+    fileUrl: d.file_url || "",
+    clientId: d.client_id || null,
+    downloadCount: d.download_count || 0,
+  }));
+
+  return NextResponse.json({ success: true, data: mapped, dbConnected: true });
 }
 
 export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const supabase = await createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
+  const body = await request.json();
 
-    const newRecord = {
-      id: `doc-${Date.now()}`,
-      name: body.name,
-      category: body.category || "Brand Assets",
-      size: body.size || "2.4 MB",
-      uploaded_by: body.uploadedBy || "Rahul Sharma",
-      uploaded_date: new Date().toISOString().split("T")[0],
-      tags: body.tags || ["Memoire Vault"],
-      file_type: body.fileType || "pdf",
-      visibility: "internal",
-    };
+  const record = {
+    name: body.name,
+    category: body.category || "General",
+    size: body.size || "",
+    uploaded_by: body.uploadedBy || "Admin",
+    uploaded_date: new Date().toISOString().split("T")[0],
+    tags: body.tags || [],
+    file_type: body.fileType || "pdf",
+    file_url: body.fileUrl || "",
+    client_id: body.clientId || null,
+    download_count: 0,
+  };
 
-    try {
-      await supabase.from("documents").insert(newRecord);
-    } catch {}
-
-    return NextResponse.json(
-      { success: true, data: { ...body, id: newRecord.id, uploadedDate: newRecord.uploaded_date } },
-      { status: 201 }
-    );
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  if (!supabase) {
+    return NextResponse.json({
+      success: true, dbConnected: false,
+      data: { ...body, id: `doc-${Date.now()}`, uploadedDate: record.uploaded_date },
+    }, { status: 201 });
   }
+
+  const { data, error } = await supabase.from("documents").insert(record).select().single();
+  if (error) {
+    console.error("[API/documents POST]", error.message);
+    return NextResponse.json({ success: false, error: error.message, dbConnected: true }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    success: true, dbConnected: true,
+    data: { id: data.id, name: data.name, category: data.category, size: data.size, uploadedBy: data.uploaded_by, uploadedDate: data.uploaded_date, tags: data.tags || [], fileType: data.file_type, fileUrl: data.file_url },
+  }, { status: 201 });
 }
 
 export async function DELETE(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-    if (!id) return NextResponse.json({ success: false, error: "Missing document id" }, { status: 400 });
+  const supabase = createServiceSupabaseClient();
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ success: false, error: "ID required" }, { status: 400 });
+  if (!supabase) return NextResponse.json({ success: true, dbConnected: false });
 
-    const supabase = await createServerSupabaseClient();
-    try {
-      await supabase.from("documents").delete().eq("id", id);
-    } catch {}
-
-    return NextResponse.json({ success: true, message: `Document ${id} deleted` });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
-  }
+  const { error } = await supabase.from("documents").delete().eq("id", id);
+  if (error) return NextResponse.json({ success: false, error: error.message, dbConnected: true }, { status: 500 });
+  return NextResponse.json({ success: true, dbConnected: true });
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
 
 const DEFAULT_ASSETS = [
   {
@@ -36,14 +36,13 @@ const DEFAULT_ASSETS = [
 
 export async function GET() {
   try {
-    const supabase = await createServerSupabaseClient();
+    const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, data: [], dbConnected: false });
     const { data, error } = await supabase.from("company_assets").select("*");
 
-    if (error || !data || data.length === 0) {
-      return NextResponse.json({ success: true, data: DEFAULT_ASSETS });
-    }
+    
 
-    const mapped = data.map((a: any) => ({
+    const mapped = (data || []).map((a: any) => ({
       id: a.id,
       name: a.name,
       category: a.category,
@@ -55,16 +54,15 @@ export async function GET() {
     }));
 
     return NextResponse.json({ success: true, data: mapped });
-  } catch (err: any) {
-    return NextResponse.json({ success: true, data: DEFAULT_ASSETS });
-  }
+  } catch (err: any) { console.error("[API] Unhandled:", err.message); return NextResponse.json({ success: false, error: err.message }, { status: 500 }); }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const supabase = await createServerSupabaseClient();
+    const supabase = createServiceSupabaseClient();
 
+  if (!supabase) return NextResponse.json({ success: true, data: [], dbConnected: false });
     const newRecord = {
       id: `asset-${Date.now()}`,
       name: body.name,

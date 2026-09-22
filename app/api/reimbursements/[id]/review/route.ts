@@ -1,21 +1,20 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const { status } = await request.json();
-    const supabase = await createServerSupabaseClient();
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const { status } = await request.json();
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, dbConnected: false });
 
-    try {
-      await supabase.from("reimbursements").update({ status }).eq("id", id);
-    } catch {}
+  const { error } = await supabase
+    .from("reimbursements")
+    .update({ status, reviewed_by: "Finance Manager", updated_at: new Date().toISOString() })
+    .eq("id", id);
 
-    return NextResponse.json({ success: true, data: { id, status } });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  if (error) {
+    console.error("[API/reimbursements/review POST]", id, error.message);
+    return NextResponse.json({ success: false, error: error.message, dbConnected: true }, { status: 500 });
   }
+  return NextResponse.json({ success: true, dbConnected: true });
 }

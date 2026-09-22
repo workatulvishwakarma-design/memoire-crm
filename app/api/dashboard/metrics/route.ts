@@ -1,40 +1,32 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
 
 export async function GET() {
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) return NextResponse.json({ success: true, data: {}, dbConnected: false });
+
   try {
-    const supabase = await createServerSupabaseClient();
+    const [clientsRes, projectsRes, tasksRes, empRes, leadsRes] = await Promise.all([
+      supabase.from("clients").select("annual_value, status").is("deleted_at", null),
+      supabase.from("projects").select("id, status, budget"),
+      supabase.from("tasks").select("id, priority, status"),
+      supabase.from("employees").select("id", { count: "exact", head: true }),
+      supabase.from("leads").select("id, status, budget"),
+    ]);
 
-    // Fetch clients
-    let totalRevenue = 0;
-    let activeClientsCount = 0;
-    let activeProjectsCount = 0;
-    let urgentTasksCount = 0;
-    let teamSize = 0;
+    const clients = clientsRes.data || [];
+    const projects = projectsRes.data || [];
+    const tasks = tasksRes.data || [];
+    const leads = leadsRes.data || [];
 
-    try {
-      const [clientsRes, projectsRes, tasksRes, empRes] = await Promise.all([
-        supabase.from("clients").select("annual_value, status"),
-        supabase.from("projects").select("id, status"),
-        supabase.from("tasks").select("id, priority, status"),
-        supabase.from("employees").select("id", { count: "exact", head: true }),
-      ]);
-
-      if (clientsRes.data) {
-        const active = clientsRes.data.filter((c: any) => c.status === "Active" || c.status === "VIP");
-        activeClientsCount = active.length;
-        totalRevenue = active.reduce((sum: number, c: any) => sum + Number(c.annual_value || 0), 0);
-      }
-      if (projectsRes.data) {
-        activeProjectsCount = projectsRes.data.filter((p: any) => p.status !== "Completed").length;
-      }
-      if (tasksRes.data) {
-        urgentTasksCount = tasksRes.data.filter((t: any) => t.priority === "Urgent" && t.status !== "Completed").length;
-      }
-      if (empRes.count !== null) {
-        teamSize = empRes.count;
-      }
-    } catch {}
+    const activeClients = clients.filter((c: any) => c.status === "Active" || c.status === "VIP");
+    const totalRevenue = activeClients.reduce((sum: number, c: any) => sum + Number(c.annual_value || 0), 0);
+    const activeProjects = projects.filter((p: any) => p.status !== "Completed" && p.status !== "On Hold");
+    const urgentTasks = tasks.filter((t: any) => t.priority === "Urgent" && t.status !== "Completed");
+    const teamSize = empRes.count || 0;
+    const pipelineValue = leads
+      .filter((l: any) => !["Won", "Lost"].includes(l.status))
+      .reduce((sum: number, l: any) => sum + Number(l.budget || 0), 0);
 
     const monthlyRunRate = Math.round(totalRevenue / 12);
 
@@ -57,29 +49,23 @@ export async function GET() {
       { name: "Packaging & Retail", value: Math.round(totalRevenue * 0.08), color: "#F59E0B" },
     ];
 
-    const defaultUtil = teamSize > 0 ? 85 : 0;
-    const deptPerformance = [
-      { dept: "Creative & Brand", utilization: defaultUtil, projects: activeProjectsCount },
-      { dept: "Technology", utilization: defaultUtil, projects: 0 },
-      { dept: "Digital Marketing", utilization: defaultUtil, projects: activeProjectsCount },
-      { dept: "BDM & Sales", utilization: defaultUtil, projects: 0 },
-    ];
-
     return NextResponse.json({
       success: true,
+      dbConnected: true,
       data: {
         totalRevenue,
         monthlyRunRate,
-        activeClientsCount,
-        activeProjectsCount,
-        urgentTasksCount,
+        activeClientsCount: activeClients.length,
+        activeProjectsCount: activeProjects.length,
+        urgentTasksCount: urgentTasks.length,
         teamSize,
+        pipelineValue,
         revenueGrowth,
         serviceProfitability,
-        deptPerformance,
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    console.error("[API/dashboard/metrics]", err.message);
+    return NextResponse.json({ success: false, error: err.message, dbConnected: true }, { status: 500 });
   }
 }

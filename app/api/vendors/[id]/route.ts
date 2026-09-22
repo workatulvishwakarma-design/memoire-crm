@@ -7,24 +7,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const supabase = createServiceSupabaseClient();
   if (!supabase) return NextResponse.json({ success: true, dbConnected: false });
 
-  const upd: Record<string, any> = { updated_at: new Date().toISOString() };
+  const upd: Record<string, any> = {};
   if (body.name !== undefined) upd.name = body.name;
-  if (body.clientId !== undefined) upd.client_id = body.clientId;
-  if (body.clientName !== undefined) upd.client_name = body.clientName;
-  if (body.serviceCategory !== undefined) upd.service_category = body.serviceCategory;
-  if (body.projectManager !== undefined) upd.project_manager = body.projectManager;
-  if (body.team !== undefined) upd.team = body.team;
-  if (body.startDate !== undefined) upd.start_date = body.startDate;
-  if (body.endDate !== undefined) upd.end_date = body.endDate;
-  if (body.budget !== undefined) upd.budget = Number(body.budget);
-  if (body.priority !== undefined) upd.priority = body.priority;
+  if (body.category !== undefined) upd.category = body.category;
+  if (body.contactPerson !== undefined) upd.contact_person = body.contactPerson;
+  if (body.email !== undefined) upd.email = body.email;
+  if (body.phone !== undefined) upd.phone = body.phone;
+  if (body.monthlyPayout !== undefined) upd.monthly_payout = Number(body.monthlyPayout);
   if (body.status !== undefined) upd.status = body.status;
-  if (body.progress !== undefined) upd.progress = body.progress;
-  if (body.description !== undefined) upd.description = body.description;
+  if (body.notes !== undefined) upd.notes = body.notes;
 
-  const { error } = await supabase.from("projects").update(upd).eq("id", id);
+  const { error } = await supabase.from("vendors").update(upd).eq("id", id);
   if (error) {
-    console.error("[API/projects PATCH]", id, error.message);
+    console.error("[API/vendors PATCH]", id, error.message);
     return NextResponse.json({ success: false, error: error.message, dbConnected: true }, { status: 500 });
   }
   return NextResponse.json({ success: true, dbConnected: true });
@@ -35,9 +30,9 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const supabase = createServiceSupabaseClient();
   if (!supabase) return NextResponse.json({ success: true, dbConnected: false });
 
-  const { error } = await supabase.from("projects").delete().eq("id", id);
+  const { error } = await supabase.from("vendors").delete().eq("id", id);
   if (error) {
-    console.error("[API/projects DELETE]", id, error.message);
+    console.error("[API/vendors DELETE]", id, error.message);
     return NextResponse.json({ success: false, error: error.message, dbConnected: true }, { status: 500 });
   }
   return NextResponse.json({ success: true, dbConnected: true });
